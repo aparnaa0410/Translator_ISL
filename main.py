@@ -1,5 +1,3 @@
-# %%
-
 # Import necessary libraries
 import numpy as np
 import os
@@ -43,23 +41,25 @@ with mp.solutions.holistic.Holistic(
 
         # Process frame
         results = image_process(image, holistic)
-        image = image.copy()  # FIX read-only issue
+        image = image.copy()
         draw_landmarks(image, results)
 
-        # Extract keypoints
-        keypoints.append(keypoint_extraction(results))
+        # 🔴 FIX: Skip if no hand detected
+        if not results.left_hand_landmarks and not results.right_hand_landmarks:
+            keypoints = []
+        else:
+            # Extract keypoints only if hand present
+            keypoints.append(keypoint_extraction(results))
 
-        # When 10 frames collected → predict
+        # Predict after 10 frames
         if len(keypoints) == 10:
             kp_array = np.array(keypoints)
             prediction = model.predict(kp_array[np.newaxis, :, :], verbose=0)
             keypoints = []
 
-            # Confidence threshold
             if np.max(prediction) > 0.9:
                 predicted_word = actions[np.argmax(prediction)]
 
-                # Avoid repeating same prediction
                 if predicted_word != last_prediction:
                     sentence.append(predicted_word)
                     last_prediction = predicted_word
@@ -68,23 +68,16 @@ with mp.solutions.holistic.Holistic(
         if len(sentence) > 7:
             sentence = sentence[-7:]
 
-        # Reset on SPACE key
-        if cv2.waitKey(1) & 0xFF == ord(' '):
-            sentence = []
-            keypoints = []
-            last_prediction = None
-
         # Capitalize first word
         if sentence:
             sentence[0] = sentence[0].capitalize()
 
-        # Combine letters into words (optional logic)
+        # Combine letters into words (optional)
         if len(sentence) >= 2:
-            if sentence[-1] in string.ascii_letters:
-                if sentence[-2] in string.ascii_letters:
-                    sentence[-1] = sentence[-2] + sentence[-1]
-                    sentence.pop(-2)
-                    sentence[-1] = sentence[-1].capitalize()
+            if sentence[-1] in string.ascii_letters and sentence[-2] in string.ascii_letters:
+                sentence[-1] = sentence[-2] + sentence[-1]
+                sentence.pop(-2)
+                sentence[-1] = sentence[-1].capitalize()
 
         # Display sentence
         text = ' '.join(sentence)
@@ -99,7 +92,20 @@ with mp.solutions.holistic.Holistic(
         # Show camera
         cv2.imshow('Camera', image)
 
-        # Exit if window closed
+        # Key controls
+        key = cv2.waitKey(1) & 0xFF
+
+        # Press 'q' to quit
+        if key == ord('q'):
+            break
+
+        # Press SPACE to reset
+        if key == ord(' '):
+            sentence = []
+            keypoints = []
+            last_prediction = None
+
+        # If window closed manually
         if cv2.getWindowProperty('Camera', cv2.WND_PROP_VISIBLE) < 1:
             break
 

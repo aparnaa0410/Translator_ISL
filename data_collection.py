@@ -9,8 +9,7 @@ from itertools import product
 from my_functions import *
 
 # Define the actions (signs)
-actions = np.array(['HELLO', 'THANKS', 'FRIEND', 
-'I', 'COME', 'BEAUTIFUL','TALK','TODAY'])
+actions = np.array(['WANT'])
 
 # Define sequences and frames
 sequences = 30
