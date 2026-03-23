@@ -1,105 +1,93 @@
-# %%
-
-# Import necessary libraries
-import os
-import numpy as np
+# Import libraries
 import cv2
+import numpy as np
 import mediapipe as mp
-from itertools import product
-from my_functions import *
+from tensorflow.keras.models import load_model
+from my_functions import image_process, draw_landmarks, keypoint_extraction
 
-# Define the actions (signs)
-actions = np.array(['WANT'])
+# Load trained model
+model = load_model('my_model')
 
-# Define sequences and frames
-sequences = 30
-frames = 10
+# Actions (IMPORTANT: include NO_ACTION)
+actions = np.array(['WANT', 'HELLO', 'THANKYOU', 'NO_ACTION'])
 
-# Dataset path
-PATH = os.path.join('data')
+# Variables
+sequence = []
+sentence = []
+threshold = 0.85   # increase for more stability
 
-# Create folders
-for action, sequence in product(actions, range(sequences)):
-    try:
-        os.makedirs(os.path.join(PATH, action, str(sequence)))
-    except:
-        pass
+current_word = None
+stable_count = 0
 
-# Open camera
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+# Camera
+cap = cv2.VideoCapture(0)
 
-if not cap.isOpened():
-    print("Cannot access camera.")
-    exit()
-
-# Mediapipe model
+# Mediapipe holistic model
 with mp.solutions.holistic.Holistic(
-    min_detection_confidence=0.75,
-    min_tracking_confidence=0.75
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
 ) as holistic:
 
-    for action, sequence, frame in product(actions, range(sequences), range(frames)):
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            continue
 
-        # WAIT FOR SPACE (only first frame)
-        if frame == 0:
-            while True:
-                ret, image = cap.read()
-                if not ret:
-                    continue
+        # Process image
+        results = image_process(frame, holistic)
+        frame = frame.copy()
+        draw_landmarks(frame, results)
 
-                results = image_process(image, holistic)
-                image = image.copy()  # FIX
-                draw_landmarks(image, results)
-
-                cv2.putText(image,
-                            f'Recording "{action}" | Sequence {sequence}',
-                            (20, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7, (0, 0, 255), 2)
-
-                cv2.putText(image,
-                            'Press SPACE to start',
-                            (20, 450),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1, (0, 0, 255), 2)
-
-                cv2.imshow('Camera', image)
-
-                # SPACE key detection
-                if cv2.waitKey(1) & 0xFF == ord(' '):
-                    break
-
-                # Window closed
-                if cv2.getWindowProperty('Camera', cv2.WND_PROP_VISIBLE) < 1:
-                    break
-
-        # RECORD FRAMES
-        else:
-            ret, image = cap.read()
-            if not ret:
-                continue
-
-            results = image_process(image, holistic)
-            image = image.copy()  # FIX
-            draw_landmarks(image, results)
-
-            cv2.putText(image,
-                        f'Recording "{action}" | Sequence {sequence}',
-                        (20, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7, (0, 0, 255), 2)
-
-            cv2.imshow('Camera', image)
-            cv2.waitKey(1)
-
-        # Window closed
-        if cv2.getWindowProperty('Camera', cv2.WND_PROP_VISIBLE) < 1:
-            break
-
-        # Save keypoints
+        # Extract keypoints
         keypoints = keypoint_extraction(results)
-        frame_path = os.path.join(PATH, action, str(sequence), str(frame))
-        np.save(frame_path, keypoints)
+        sequence.append(keypoints)
+        sequence = sequence[-30:]   # keep last 30 frames
+
+        # Prediction logic
+        if len(sequence) == 30:
+            res = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+
+            predicted_index = np.argmax(res)
+            predicted_word = actions[predicted_index]
+            confidence = res[predicted_index]
+
+            # ✅ VALID prediction check
+            if confidence > threshold and predicted_word != 'NO_ACTION':
+
+                # 🔒 WORD LOCK SYSTEM
+                if predicted_word == current_word:
+                    stable_count += 1
+                else:
+                    current_word = predicted_word
+                    stable_count = 1
+
+                # ✅ Only confirm after stable frames
+                if stable_count > 15:
+                    if len(sentence) == 0 or sentence[-1] != current_word:
+                        sentence.append(current_word)
+
+            else:
+                # Reset if no valid sign
+                current_word = None
+                stable_count = 0
+
+        # Limit sentence length
+        if len(sentence) > 5:
+            sentence = sentence[-5:]
+
+        # Display output
+        cv2.rectangle(frame, (0, 0), (640, 50), (0, 0, 0), -1)
+        cv2.putText(frame,
+                    ' '.join(sentence),
+                    (10, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1, (255, 255, 255), 2)
+
+        cv2.imshow('Sign Language Translator', frame)
+
+        # Exit on 'q'
+        if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
 
 # Release resources
 cap.release()
