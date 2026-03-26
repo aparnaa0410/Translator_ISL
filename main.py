@@ -1,43 +1,26 @@
 # Import necessary libraries
 import numpy as np
 import os
+import string
 import mediapipe as mp
 import cv2
-import pyttsx3
 from my_functions import *
 from tensorflow.keras.models import load_model
 from grammar_model import convert_gloss_to_sentence
 
-# Path
 PATH = os.path.join('data')
 actions = np.array(os.listdir(PATH))
-
-# Load model
 model = load_model('my_model')
 
-# 🔊 Initialize TTS
-engine = pyttsx3.init()
-engine.setProperty('rate', 150)
-engine.setProperty('volume', 1.0)
-
-# Variables
 sentence = []
 keypoints = []
 last_prediction = None
 cooldown = 0
 
-# NLP
+# NLP caching
 last_gloss = ""
 final_text = ""
 
-# 🔊 Speech control
-last_spoken_text = ""
-speech_done = False   # 🔥 IMPORTANT FIX
-
-# 🔥 Pause detection
-no_hand_counter = 0
-
-# Camera
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
 if not cap.isOpened():
@@ -58,39 +41,13 @@ with mp.solutions.holistic.Holistic(
         image = image.copy()
         draw_landmarks(image, results)
 
-        # 🔴 NO HAND DETECTED
+        # Skip if no hand
         if not results.left_hand_landmarks and not results.right_hand_landmarks:
             keypoints = []
-            no_hand_counter += 1
-
-            # 🔊 Speak after pause
-            if no_hand_counter > 15 and not speech_done:
-                if len(sentence) >= 2:
-                    final_text = convert_gloss_to_sentence(sentence)
-
-                    if final_text:
-                        engine.say(final_text)
-                        engine.runAndWait()
-                        last_spoken_text = final_text
-                        speech_done = True   # ✅ prevents repeat
-
-            # 🔄 Auto reset
-            if no_hand_counter > 60:
-                sentence = []
-                keypoints = []
-                last_prediction = None
-                cooldown = 0
-                final_text = ""
-                last_gloss = ""
-                last_spoken_text = ""
-                speech_done = False   # 🔥 RESET
         else:
-            # Hand detected again
-            no_hand_counter = 0
-            speech_done = False   # 🔥 ALLOW NEW SPEECH
             keypoints.append(keypoint_extraction(results))
 
-        # 🔥 Prediction
+        # Prediction
         if len(keypoints) == 10:
             kp_array = np.array(keypoints)
             prediction = model.predict(kp_array[np.newaxis, :, :], verbose=0)
@@ -105,45 +62,36 @@ with mp.solutions.holistic.Holistic(
                     last_prediction = predicted_word
                     cooldown = 20
 
-        # Cooldown reduce
         if cooldown > 0:
             cooldown -= 1
 
-        # Limit sentence
         if len(sentence) > 7:
             sentence = sentence[-7:]
 
-        # Capitalize
         if sentence:
             sentence[0] = sentence[0].capitalize()
 
-        # Gloss
+        # 🔥 NLP only when sentence changes
         gloss = ' '.join(sentence)
 
-        # NLP display
         if gloss != last_gloss:
             final_text = convert_gloss_to_sentence(sentence)
             last_gloss = gloss
 
-        # 🎯 Display
+        # Display
         cv2.putText(image, f"Gloss: {gloss}", (20, 420),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
 
         cv2.putText(image, f"Sentence: {final_text}", (20, 470),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
 
-        cv2.putText(image, "Press SPACE to reset | Q to quit", (20, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
-
         cv2.imshow('Camera', image)
 
         key = cv2.waitKey(1) & 0xFF
 
-        # Quit
         if key == ord('q'):
             break
 
-        # 🔄 Manual reset
         if key == ord(' '):
             sentence = []
             keypoints = []
@@ -151,14 +99,9 @@ with mp.solutions.holistic.Holistic(
             cooldown = 0
             final_text = ""
             last_gloss = ""
-            last_spoken_text = ""
-            no_hand_counter = 0
-            speech_done = False   # 🔥 IMPORTANT
 
-        # Window close
         if cv2.getWindowProperty('Camera', cv2.WND_PROP_VISIBLE) < 1:
             break
 
-# Cleanup
 cap.release()
 cv2.destroyAllWindows()
