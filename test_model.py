@@ -8,7 +8,7 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 model = load_model('my_model')
 
 # Actions (same as training)
-actions = np.array(['BEAUTIFUL','CLASS','COLLEGE','COME','DONT CARE','FRIEND','HELLO','HOW','I','LIKE','PHONE','PROMISE','SLEEP','TAKE CARE','TALK','THANKYOU','TODAY','WANT','WATER','YOU','NO_ACTION'])
+actions = np.array(['BEAUTIFUL','CLASS','COLLEGE','COME','DONT CARE','FRIEND','HELLO','HOW','I','LIKE','PHONE','PROMISE','SLEEP','TAKE CARE','TAKE TIME','TALK','THANKYOU','TODAY','WANT','WATER','YOU','NO_ACTION'])
 
 # Path to dataset
 DATA_PATH = os.path.join('data')
